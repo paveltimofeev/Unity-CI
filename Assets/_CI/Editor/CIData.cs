@@ -11,6 +11,7 @@ namespace Assets._CI.Editor
 
         static readonly string buildsFolderName = "Builds/";
         static readonly string ciScriptsFolder = "CI/";
+        static readonly string shellscriptsFolder="Assets/_CI/shell-scripts/";
 
         public static string BuildsFolderName 
         { 
@@ -66,7 +67,15 @@ namespace Assets._CI.Editor
                     GetPathFromRoot(ciScriptsFolder));
             }
         }
-
+        
+        public static string FlushToCloudBuildCommand
+        {
+            get
+            {
+                return string.Format("/c flush-to-cloud-build.sh", GetPathFromRoot(shellscriptsFolder));
+            }
+        }
+        
         public static string GetPathFromRoot(string child)
         {
             string codeBase = System.Reflection.Assembly.GetExecutingAssembly().CodeBase;

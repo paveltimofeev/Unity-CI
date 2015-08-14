@@ -92,16 +92,16 @@ namespace Assets._CI.Editor
         }
 
 
-        [MenuItem("CI/Merge to cloud-build and push", false, 130)]
-        static void MergeToClodBuild()
+        [MenuItem("CI/Flush to cloud-build", false, 130)]
+        static void FlushToCloudBuild()
         {
-            Debug.LogWarning("'CI -> Merge to cloud-build and push' is not implemented yet");
+            CIActions.StartCommand(CIData.CMD, CIData.FlushToCloudBuildCommand);
         }
 
-        [MenuItem("CI/Merge to cloud-build and push", true)]
-        static bool MergeToClodBuildValidate()
+        [MenuItem("CI/Flush to cloud-build", true)]
+        static bool FlushToCloudBuildValidate()
         {
-            return false;
+            return true;
         }
     }
 }
