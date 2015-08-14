@@ -1,3 +1,5 @@
+pushd ./../../../
+
 BRANCH=$(git symbolic-ref -q HEAD)
 BRANCH=${BRANCH##refs/heads/}
 BRANCH=${BRANCH:-HEAD}
@@ -9,3 +11,5 @@ git merge origin $BRANCH
 git push
 
 git checkout $BRANCH
+
+popd
