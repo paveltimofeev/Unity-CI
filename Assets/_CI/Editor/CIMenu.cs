@@ -88,7 +88,7 @@ namespace Assets._CI.Editor
         [MenuItem("CI/Load 3rd-party assets", true)]
         static bool LoadThirdPartyAssetsValidate()
         {
-            return false;
+            return true;
         }
 
 
