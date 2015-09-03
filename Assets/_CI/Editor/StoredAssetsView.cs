@@ -11,15 +11,14 @@ namespace Assets._CI.Editor
 {
     class StoredAssetsView : EditorWindow
     {
-        private static StoredAssetsView s_Instance;
+        //private static StoredAssetsView s_Instance;
         string assetsFilePath = string.Empty;
 
         private readonly GUIContent m_GUIRefreshList = new GUIContent("Refresh list", "Refresh list of downloaded assets");
         private readonly GUIContent m_GUIStoreAssets = new GUIContent("Save .assets", "Store selected assets to .assets list");
         private readonly GUIContent m_GUIImportAssets = new GUIContent("Import .assets", "Import assets from .assets list");
         private readonly GUIContent m_GUIInstallSelected = new GUIContent("Install selected", "Install selected packages");
-        private readonly GUIContent m_GUIGroup = new GUIContent("View", "View mode");
-
+        
         Hashtable publisher_table = new Hashtable();
         IList<StoredAsset> publishers = new List<StoredAsset>();
         List<StoredAsset> storedAssets = new List<StoredAsset>();
@@ -29,7 +28,7 @@ namespace Assets._CI.Editor
         public void OnEnable()
         {
             titleContent = new GUIContent("Assets Manager");
-            s_Instance = this;
+            //s_Instance = this;
             assetsFilePath = Path.Combine(Environment.CurrentDirectory, ".assets");
 
             RefreshList();
@@ -37,7 +36,7 @@ namespace Assets._CI.Editor
 
         public void OnDestroy()
         {
-            s_Instance = null;
+            //s_Instance = null;
         }
         
         public void OnGUI()
@@ -58,7 +57,7 @@ namespace Assets._CI.Editor
 
             if (GUILayout.Button(m_GUIRefreshList, EditorStyles.toolbarButton))
             {
-                Debug.Log(m_GUIRefreshList.text);
+                Log(m_GUIRefreshList.text);
                 RefreshList();
             }
             m_Group = (Group)EditorGUILayout.EnumPopup(m_Group, EditorStyles.toolbarDropDown);
@@ -69,38 +68,43 @@ namespace Assets._CI.Editor
 
             if (GUILayout.Button(m_GUIStoreAssets, EditorStyles.toolbarButton))
             {
-                Debug.Log(m_GUIStoreAssets.text);
+                Log(m_GUIStoreAssets.text);
                 var selected = storedAssets.Where(x => x.selected);
                 SaveAssets( selected.ToList(), assetsFilePath );
             }
 
             if (GUILayout.Button(m_GUIImportAssets, EditorStyles.toolbarButton))
             {
-                Debug.Log(m_GUIImportAssets.text);
+                Log(m_GUIImportAssets.text);
 
                 IList<StoredAsset> imported = LoadAssets(assetsFilePath);
                 storedAssets.ForEach( a=> a.selected= false);
                 foreach (var item in imported)
                 {
                     storedAssets.Find(
-                        x => 
-                            x.version == item.version && 
-                            x.publisher == item.publisher && 
+                        x =>
+                            x.version == item.version &&
+                            x.publisher == item.publisher &&
                             x.name == item.name
-                        
-                        ).selected = true;   
+
+                        ).selected = true;
                 }
             }
 
             if (GUILayout.Button(m_GUIInstallSelected, EditorStyles.toolbarButton))
             {
-                Debug.Log(m_GUIInstallSelected.text);
+                Log(m_GUIInstallSelected.text);
                 var selected = storedAssets.Where(x => x.selected);
                 InstallPackages(selected.ToList());
             }
 
             
             EditorGUILayout.EndHorizontal();
+        }
+
+        private void Log(string message)
+        {
+            //Debug.Log(message);
         }
 
         private void DrawAssetsList(IList<StoredAsset> assets)
@@ -110,39 +114,50 @@ namespace Assets._CI.Editor
 
             if (assets != null)
             {
-                foreach (StoredAsset publisher in publishers)
+                if (m_Group == Group.GroupByPublisher)
                 {
-                    if (publisher_table.ContainsKey(publisher.publisher))
+                    foreach (StoredAsset publisher in publishers)
                     {
-                        //EditorGUILayout.Foldout((bool)publisher_table[publisher.publisher], publisher.publisher);
-
-                        if (EditorGUILayout.Foldout((bool)publisher_table[publisher.publisher], publisher.publisher))
+                        if (publisher_table.ContainsKey(publisher.publisher))
                         {
-                            publisher_table[publisher.publisher] = true;
-                            var publisherAssets = assets.Where(x => x.publisher == publisher.publisher).ToList();
-
-                            foreach (StoredAsset asset in publisherAssets)
+                            if (EditorGUILayout.Foldout((bool)publisher_table[publisher.publisher], publisher.publisher))
                             {
-                                GUILayout.BeginHorizontal();
-                                GUILayout.Space(10);
-                                asset.selected = GUILayout.Toggle(asset.selected, string.Format("{0} [{1}]", asset.name, asset.version));
-                                GUILayout.EndHorizontal();
-                            }
-                        }
-                        else
-                        {
+                                publisher_table[publisher.publisher] = true;
+                                var publisherAssets = assets.Where(x => x.publisher == publisher.publisher).ToList();
 
-                            publisher_table[publisher.publisher] = false;
+                                foreach (StoredAsset asset in publisherAssets)
+                                {
+                                    GUILayout.BeginHorizontal();
+                                    GUILayout.Space(10);
+                                    asset.selected = GUILayout.Toggle(asset.selected, string.Format("{0} [{1}]", asset.name, asset.version));
+                                    GUILayout.EndHorizontal();
+                                }
+                            }
+                            else
+                            {
+
+                                publisher_table[publisher.publisher] = false;
+                            }
                         }
                     }
                 }
 
-                /*
-                foreach (StoredAsset asset in assets)
+                if (m_Group == Group.All)
                 {
-                    asset.selected = GUILayout.Toggle(asset.selected, string.Format("[{1}] {2} / {0}", asset.name, asset.version, asset.publisher));
+                    foreach (StoredAsset asset in assets)
+                    {
+                        asset.selected = GUILayout.Toggle(asset.selected, string.Format("{2} / {0} [{1}]", asset.name, asset.version, asset.publisher));
+                    }
                 }
-                */
+
+                if (m_Group == Group.SelectedOnly)
+                {
+                    foreach (StoredAsset asset in assets)
+                    {
+                        if(asset.selected)
+                            asset.selected = GUILayout.Toggle(asset.selected, string.Format("{2} / {0} [{1}]", asset.name, asset.version, asset.publisher));
+                    }
+                }
             }
 
             EditorGUILayout.EndScrollView();
@@ -200,14 +215,14 @@ namespace Assets._CI.Editor
                 content.AppendFormat("{0};{1};{2}\r\n", asset.version, asset.publisher, asset.name);
             }
 
-            Debug.Log("Save content to " + filePath);
+            Log("Save content to " + filePath);
 
             File.WriteAllText(assetsFilePath, content.ToString());
         }
 
         public IList<StoredAsset> LoadAssets(string filePath)
         {
-            Debug.Log("Load assets from " + filePath);
+            Log("Load assets from " + filePath);
 
             string[] lines = File.ReadAllLines(assetsFilePath);
             IList<StoredAsset> result = new List<StoredAsset>();
@@ -235,6 +250,7 @@ namespace Assets._CI.Editor
         
         #endregion
 
+        
 
         [MenuItem("Window/Assets Manager", false, 116)]
         static void LoadThirdPartyAssets()
