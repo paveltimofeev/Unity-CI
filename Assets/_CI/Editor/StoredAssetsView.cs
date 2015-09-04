@@ -301,7 +301,7 @@ namespace Assets._CI.Editor
         public float size;
     }
 
-    enum Group { GroupByPublisher, SelectedOnly, All }
+    enum Group { All, GroupByPublisher, SelectedOnly }
     [Flags]
     enum DrawFlag
     {
