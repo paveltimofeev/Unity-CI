@@ -11,24 +11,25 @@ namespace Assets._CI.Editor
 {
     class StoredAssetsView : EditorWindow
     {
-        //private static StoredAssetsView s_Instance;
-        string assetsFilePath = string.Empty;
+        private string assetsFilePath = string.Empty;
 
         private readonly GUIContent m_GUIRefreshList = new GUIContent("Refresh list", "Refresh list of downloaded assets");
         private readonly GUIContent m_GUIStoreAssets = new GUIContent("Save .assets", "Store selected assets to .assets list");
         private readonly GUIContent m_GUIImportAssets = new GUIContent("Import .assets", "Import assets from .assets list");
         private readonly GUIContent m_GUIInstallSelected = new GUIContent("Install selected", "Install selected packages");
-        
-        Hashtable publisher_table = new Hashtable();
-        IList<StoredAsset> publishers = new List<StoredAsset>();
-        List<StoredAsset> storedAssets = new List<StoredAsset>();
-        Vector2 m_Scroll = Vector2.zero;
-        Group m_Group = Group.GroupByPublisher;
+
+        private Hashtable publisher_table = new Hashtable();
+        private IList<StoredAsset> publishers = new List<StoredAsset>();
+        private List<StoredAsset> storedAssets = new List<StoredAsset>();
+        private Vector2 m_Scroll = Vector2.zero;
+        private Group m_Group = Group.GroupByPublisher;
+
+        private string m_searchFilter = "";
+
 
         public void OnEnable()
         {
             titleContent = new GUIContent("Assets Manager");
-            //s_Instance = this;
             assetsFilePath = Path.Combine(Environment.CurrentDirectory, ".assets");
 
             RefreshList();
@@ -36,7 +37,7 @@ namespace Assets._CI.Editor
 
         public void OnDestroy()
         {
-            //s_Instance = null;
+
         }
         
         public void OnGUI()
@@ -64,7 +65,8 @@ namespace Assets._CI.Editor
 
             GUILayout.FlexibleSpace();
 
-            EditorGUILayout.TextField("", EditorStyles.toolbarTextField);
+            if(m_Group == Group.All)
+                m_searchFilter = EditorGUILayout.TextField(m_searchFilter, EditorStyles.toolbarTextField);
 
             if (GUILayout.Button(m_GUIStoreAssets, EditorStyles.toolbarButton))
             {
@@ -102,11 +104,6 @@ namespace Assets._CI.Editor
             EditorGUILayout.EndHorizontal();
         }
 
-        private void Log(string message)
-        {
-            //Debug.Log(message);
-        }
-
         private void DrawAssetsList(IList<StoredAsset> assets)
         {
             EditorGUILayout.BeginVertical();
@@ -129,13 +126,12 @@ namespace Assets._CI.Editor
                                 {
                                     GUILayout.BeginHorizontal();
                                     GUILayout.Space(10);
-                                    asset.selected = GUILayout.Toggle(asset.selected, string.Format("{0} [{1}]", asset.name, asset.version));
+                                    asset.selected = DrawAssetToggle(asset, DrawFlag.name | DrawFlag.version | DrawFlag.size);
                                     GUILayout.EndHorizontal();
                                 }
                             }
                             else
                             {
-
                                 publisher_table[publisher.publisher] = false;
                             }
                         }
@@ -146,7 +142,8 @@ namespace Assets._CI.Editor
                 {
                     foreach (StoredAsset asset in assets)
                     {
-                        asset.selected = GUILayout.Toggle(asset.selected, string.Format("{2} / {0} [{1}]", asset.name, asset.version, asset.publisher));
+                        if (IsFiltered(asset.name) || IsFiltered(asset.publisher))
+                            asset.selected = DrawAssetToggle(asset, DrawFlag.publisher | DrawFlag.name | DrawFlag.version | DrawFlag.size);
                     }
                 }
 
@@ -154,8 +151,8 @@ namespace Assets._CI.Editor
                 {
                     foreach (StoredAsset asset in assets)
                     {
-                        if(asset.selected)
-                            asset.selected = GUILayout.Toggle(asset.selected, string.Format("{2} / {0} [{1}]", asset.name, asset.version, asset.publisher));
+                        if (asset.selected)
+                            asset.selected = DrawAssetToggle(asset, DrawFlag.category | DrawFlag.name | DrawFlag.size);
                     }
                 }
             }
@@ -164,19 +161,28 @@ namespace Assets._CI.Editor
             EditorGUILayout.EndVertical();
         }
 
-
-
-        private IList<StoredAsset> CreatePublisherList(IList<StoredAsset> assets)
+        bool DrawAssetToggle(StoredAsset asset, DrawFlag draw)
         {
-            IList<StoredAsset> publishers = assets.GroupBy(x => x.publisher).Select(x => x.First()).ToList();
-            publisher_table = new Hashtable();
-            foreach (var item in publishers)
-            {
-                publisher_table[item.publisher] = false;
-            }
-            return publishers;
-        }
+            StringBuilder sb = new StringBuilder();
+            
+            if ((draw & DrawFlag.publisher) == DrawFlag.publisher) 
+                sb.AppendFormat("{0} | ", asset.publisher);
 
+            if ((draw & DrawFlag.category) == DrawFlag.category)
+                sb.AppendFormat("{0} / ", asset.category);
+
+            if ((draw & DrawFlag.name) == DrawFlag.name) 
+                sb.AppendFormat("{0} ", asset.name);
+            
+            if ((draw & DrawFlag.version) == DrawFlag.version) 
+                sb.AppendFormat("[{0}] ", asset.version);
+
+            if ((draw & DrawFlag.size) == DrawFlag.size) 
+                sb.AppendFormat("({0} Mb)", asset.size);
+
+            return GUILayout.Toggle(asset.selected, sb.ToString());
+            //return GUILayout.Toggle(asset.selected, string.Format("{0} | {1} [{2}] {3}Mb", asset.publisher, asset.name, asset.version, asset.size));
+        }
 
         #region Toolbar Actions
         
@@ -199,7 +205,8 @@ namespace Assets._CI.Editor
                             name = Path.GetFileNameWithoutExtension(package),
                             publisher = packageInfo.Directory.Parent.Name,
                             category = packageInfo.Directory.Name,
-                            version = Path.GetFileNameWithoutExtension(folder)
+                            version = Path.GetFileNameWithoutExtension(folder),
+                            size = packageInfo.Length / 1024 / 1024
                         });
                 }
             }
@@ -250,15 +257,36 @@ namespace Assets._CI.Editor
         
         #endregion
 
-        
+        private bool IsFiltered(string value)
+        {
+            if (m_searchFilter == "" || m_searchFilter == null)
+                return true;
+
+            return value.ToUpperInvariant().Contains(m_searchFilter.ToUpperInvariant());
+        }
+
+        private IList<StoredAsset> CreatePublisherList(IList<StoredAsset> assets)
+        {
+            IList<StoredAsset> publishers = assets.GroupBy(x => x.publisher).Select(x => x.First()).ToList();
+            publisher_table = new Hashtable();
+            foreach (var item in publishers)
+            {
+                publisher_table[item.publisher] = false;
+            }
+            return publishers;
+        }
 
         [MenuItem("Window/Assets Manager", false, 116)]
-        static void LoadThirdPartyAssets()
+        private static void LoadThirdPartyAssets()
         {
             Debug.Log("'CI -> Load stored assets");
 
             GetWindow(typeof(StoredAssetsView)).Show();
+        }
 
+        private void Log(string message)
+        {
+            //Debug.Log(message);
         }
     }
 
@@ -270,7 +298,17 @@ namespace Assets._CI.Editor
         public string path;
         public bool selected;
         public string category;
+        public float size;
     }
 
-    enum Group { GroupByPublisher, SelectedOnly, Filtered, All }
+    enum Group { GroupByPublisher, SelectedOnly, All }
+    [Flags]
+    enum DrawFlag
+    {
+        publisher = 1,
+        category = 2,
+        name = 4,
+        version = 8,
+        size = 16
+    }
 }
