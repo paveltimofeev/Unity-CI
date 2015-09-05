@@ -7,32 +7,32 @@ using UnityEngine;
 using System.IO;
 using System.Collections;
 
-namespace Assets._CI.Editor
+namespace Patico.AssetManager
 {
     class StoredAssetsView : EditorWindow
     {
-        private string assetsFilePath = string.Empty;
-
+        private AssetManager assetManager = new AssetManager();
+        
         private readonly GUIContent m_GUIRefreshList = new GUIContent("Refresh list", "Refresh list of downloaded assets");
         private readonly GUIContent m_GUIStoreAssets = new GUIContent("Save .assets", "Store selected assets to .assets list");
         private readonly GUIContent m_GUIImportAssets = new GUIContent("Import .assets", "Import assets from .assets list");
         private readonly GUIContent m_GUIInstallSelected = new GUIContent("Install selected", "Install selected packages");
 
-        private Hashtable publisher_table = new Hashtable();
+        private string assetsFilePath = string.Empty;
+        private string m_searchFilter = "";
+        private Hashtable publisher_foldout_table = new Hashtable();
         private IList<StoredAsset> publishers = new List<StoredAsset>();
         private List<StoredAsset> storedAssets = new List<StoredAsset>();
         private Vector2 m_Scroll = Vector2.zero;
         private Group m_Group = Group.GroupByPublisher;
 
-        private string m_searchFilter = "";
-
-
+        
         public void OnEnable()
         {
             titleContent = new GUIContent("Assets Manager");
             assetsFilePath = Path.Combine(Environment.CurrentDirectory, ".assets");
 
-            RefreshList();
+            storedAssets = assetManager.RefreshList();
         }
 
         public void OnDestroy()
@@ -56,52 +56,52 @@ namespace Assets._CI.Editor
         {
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
 
-            if (GUILayout.Button(m_GUIRefreshList, EditorStyles.toolbarButton))
+            DrawToolbarButton(m_GUIRefreshList, () =>
             {
-                Log(m_GUIRefreshList.text);
-                RefreshList();
-            }
+                storedAssets = assetManager.RefreshList();
+                publishers = assetManager.CreatePublisherList(storedAssets);
+
+                publisher_foldout_table = new Hashtable();
+                foreach (var item in publishers)
+                {
+                    publisher_foldout_table[item.publisher] = false;
+                }
+            });
+
             m_Group = (Group)EditorGUILayout.EnumPopup(m_Group, EditorStyles.toolbarDropDown);
+
+            if (m_Group == Group.All)
+            {
+                m_searchFilter = EditorGUILayout.TextField(m_searchFilter, EditorStyles.toolbarTextField);
+            }
 
             GUILayout.FlexibleSpace();
 
-            if(m_Group == Group.All)
-                m_searchFilter = EditorGUILayout.TextField(m_searchFilter, EditorStyles.toolbarTextField);
-
-            if (GUILayout.Button(m_GUIStoreAssets, EditorStyles.toolbarButton))
+            DrawToolbarButton(m_GUIStoreAssets, () =>
             {
-                Log(m_GUIStoreAssets.text);
                 var selected = storedAssets.Where(x => x.selected);
-                SaveAssets( selected.ToList(), assetsFilePath );
-            }
+                assetManager.SaveAssets(selected.ToList(), assetsFilePath);
+            });
 
-            if (GUILayout.Button(m_GUIImportAssets, EditorStyles.toolbarButton))
+            DrawToolbarButton(m_GUIImportAssets, () =>
             {
-                Log(m_GUIImportAssets.text);
+                IList<StoredAsset> imported = assetManager.LoadAssets(assetsFilePath);
+                assetManager.SelectAssets(storedAssets, imported);
+            });
 
-                IList<StoredAsset> imported = LoadAssets(assetsFilePath);
-                storedAssets.ForEach( a=> a.selected= false);
-                foreach (var item in imported)
-                {
-                    storedAssets.Find(
-                        x =>
-                            x.version == item.version &&
-                            x.publisher == item.publisher &&
-                            x.name == item.name
-
-                        ).selected = true;
-                }
-            }
-
-            if (GUILayout.Button(m_GUIInstallSelected, EditorStyles.toolbarButton))
+            DrawToolbarButton(m_GUIInstallSelected, () =>
             {
-                Log(m_GUIInstallSelected.text);
-                var selected = storedAssets.Where(x => x.selected);
-                InstallPackages(selected.ToList());
-            }
-
+                assetManager.InstallPackages(
+                    storedAssets.Where(x => x.selected).ToList());
+            });
             
             EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawToolbarButton(GUIContent content, Action action)
+        {
+            if (GUILayout.Button(content, EditorStyles.toolbarButton))
+                action();
         }
 
         private void DrawAssetsList(IList<StoredAsset> assets)
@@ -115,11 +115,15 @@ namespace Assets._CI.Editor
                 {
                     foreach (StoredAsset publisher in publishers)
                     {
-                        if (publisher_table.ContainsKey(publisher.publisher))
+                        if (publisher_foldout_table.ContainsKey(publisher.publisher))
                         {
-                            if (EditorGUILayout.Foldout((bool)publisher_table[publisher.publisher], publisher.publisher))
+                            bool foldout = EditorGUILayout.Foldout((bool)publisher_foldout_table[publisher.publisher], 
+                                publisher.publisher);
+
+                            publisher_foldout_table[publisher.publisher] = foldout;
+
+                            if (foldout)
                             {
-                                publisher_table[publisher.publisher] = true;
                                 var publisherAssets = assets.Where(x => x.publisher == publisher.publisher).ToList();
 
                                 foreach (StoredAsset asset in publisherAssets)
@@ -129,10 +133,6 @@ namespace Assets._CI.Editor
                                     asset.selected = DrawAssetToggle(asset, DrawFlag.name | DrawFlag.version | DrawFlag.size);
                                     GUILayout.EndHorizontal();
                                 }
-                            }
-                            else
-                            {
-                                publisher_table[publisher.publisher] = false;
                             }
                         }
                     }
@@ -161,7 +161,7 @@ namespace Assets._CI.Editor
             EditorGUILayout.EndVertical();
         }
 
-        bool DrawAssetToggle(StoredAsset asset, DrawFlag draw)
+        private bool DrawAssetToggle(StoredAsset asset, DrawFlag draw)
         {
             StringBuilder sb = new StringBuilder();
             
@@ -181,26 +181,52 @@ namespace Assets._CI.Editor
                 sb.AppendFormat("({0} Mb)", asset.size);
 
             return GUILayout.Toggle(asset.selected, sb.ToString());
-            //return GUILayout.Toggle(asset.selected, string.Format("{0} | {1} [{2}] {3}Mb", asset.publisher, asset.name, asset.version, asset.size));
         }
 
-        #region Toolbar Actions
-        
-        private void RefreshList()
+
+        private bool IsFiltered(string value)
+        {
+            if (m_searchFilter == "" || m_searchFilter == null)
+                return true;
+
+            return value.ToUpperInvariant().Contains(m_searchFilter.ToUpperInvariant());
+        }
+
+        [MenuItem("Window/Assets Manager", false, 116)]
+        private static void LoadThirdPartyAssets()
+        {
+            GetWindow(typeof(StoredAssetsView)).Show();
+        }
+    }
+
+    class AssetManager
+    {
+        private const string k_appUnityFolder = "Unity";
+        private const string k_assetsFolderPattern = "Asset Store*";
+        private const string k_assetsFilePattern = "*.unitypackage";
+
+        public List<StoredAsset> RefreshList()
         {
             // IF WIN
-            storedAssets.Clear();
+            string appdata = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), k_appUnityFolder);
 
-            string appdata = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Unity");
-            string[] folders = Directory.GetDirectories(appdata, "Asset Store*");
+            return RefreshList(appdata);
+        }
+
+        public List<StoredAsset> RefreshList(string sourceFolder)
+        {
+            List<StoredAsset> storedAssets = new List<StoredAsset>();
+
+            string[] folders = Directory.GetDirectories(sourceFolder, k_assetsFolderPattern);
 
             foreach (var folder in folders)
             {
-                foreach (string package in Directory.GetFiles(folder, "*.unitypackage", SearchOption.AllDirectories))
+                foreach (string package in Directory.GetFiles(folder, k_assetsFilePattern, SearchOption.AllDirectories))
                 {
                     FileInfo packageInfo = new FileInfo(package);
                     storedAssets.Add(
-                        new StoredAsset() {
+                        new StoredAsset()
+                        {
                             path = package,
                             name = Path.GetFileNameWithoutExtension(package),
                             publisher = packageInfo.Directory.Parent.Name,
@@ -211,7 +237,7 @@ namespace Assets._CI.Editor
                 }
             }
 
-            publishers = CreatePublisherList(storedAssets);
+            return storedAssets;
         }
 
         public void SaveAssets(IList<StoredAsset> assets, string filePath)
@@ -222,23 +248,21 @@ namespace Assets._CI.Editor
                 content.AppendFormat("{0};{1};{2}\r\n", asset.version, asset.publisher, asset.name);
             }
 
-            Log("Save content to " + filePath);
-
-            File.WriteAllText(assetsFilePath, content.ToString());
+            File.WriteAllText(filePath, content.ToString());
         }
 
         public IList<StoredAsset> LoadAssets(string filePath)
         {
-            Log("Load assets from " + filePath);
-
-            string[] lines = File.ReadAllLines(assetsFilePath);
+            string[] lines = File.ReadAllLines(filePath);
             IList<StoredAsset> result = new List<StoredAsset>();
             foreach (string data in lines)
             {
-                result.Add(new StoredAsset() { 
-                    version = data.Split(';')[0], 
-                    publisher = data.Split(';')[1], 
-                    name = data.Split(';')[2] });
+                result.Add(new StoredAsset()
+                {
+                    version = data.Split(';')[0],
+                    publisher = data.Split(';')[1],
+                    name = data.Split(';')[2]
+                });
             }
 
             return result;
@@ -254,40 +278,26 @@ namespace Assets._CI.Editor
                 }
             }
         }
-        
-        #endregion
 
-        private bool IsFiltered(string value)
+        public void SelectAssets(List<StoredAsset> storedAssets, IList<StoredAsset> imported)
         {
-            if (m_searchFilter == "" || m_searchFilter == null)
-                return true;
-
-            return value.ToUpperInvariant().Contains(m_searchFilter.ToUpperInvariant());
-        }
-
-        private IList<StoredAsset> CreatePublisherList(IList<StoredAsset> assets)
-        {
-            IList<StoredAsset> publishers = assets.GroupBy(x => x.publisher).Select(x => x.First()).ToList();
-            publisher_table = new Hashtable();
-            foreach (var item in publishers)
+            storedAssets.ForEach(a => a.selected = false);
+            foreach (var item in imported)
             {
-                publisher_table[item.publisher] = false;
+                storedAssets.Find(
+                    x =>
+                        x.version == item.version &&
+                        x.publisher == item.publisher &&
+                        x.name == item.name
+
+                    ).selected = true;
             }
-            return publishers;
         }
 
-        [MenuItem("Window/Assets Manager", false, 116)]
-        private static void LoadThirdPartyAssets()
+        public IList<StoredAsset> CreatePublisherList(IList<StoredAsset> assets)
         {
-            Debug.Log("'CI -> Load stored assets");
-
-            GetWindow(typeof(StoredAssetsView)).Show();
-        }
-
-        private void Log(string message)
-        {
-            //Debug.Log(message);
-        }
+            return assets.GroupBy(x => x.publisher).Select(x => x.First()).ToList();
+        }        
     }
 
     class StoredAsset
@@ -302,6 +312,7 @@ namespace Assets._CI.Editor
     }
 
     enum Group { All, GroupByPublisher, SelectedOnly }
+    
     [Flags]
     enum DrawFlag
     {
@@ -310,5 +321,53 @@ namespace Assets._CI.Editor
         name = 4,
         version = 8,
         size = 16
+    }
+
+    public static class CLI
+    {
+        /*
+          AssetsManager -assets=.assets -action=Install -source=//127.0.0.1/shared_assets/
+        */
+
+        const string k_actionParam = "-action=";
+        const string k_sourceParam = "-source=";
+        const string k_assetsParam = "-assets=";
+
+        static AssetManager assetManager = new AssetManager();
+
+        public static void AssetsManager()
+        {
+            string action = GetParameterArgument(k_actionParam);
+
+            switch (action)
+            {
+                case "install":
+
+                    var storedAssets = assetManager.RefreshList();
+
+                    assetManager.SelectAssets(
+                        storedAssets,
+                        assetManager.LoadAssets(Path.Combine(Environment.CurrentDirectory, ".assets")));
+
+                    assetManager.InstallPackages(
+                        storedAssets.Where(x => x.selected).ToList());
+
+                    break;
+                case "save": break;
+                case "list": break;
+            }
+        }
+
+        private static string GetParameterArgument(string parameterName)
+        {
+            foreach (var arg in Environment.GetCommandLineArgs())
+            {
+                if (arg.ToLower().StartsWith(parameterName.ToLower()))
+                {
+                    return arg.Substring(parameterName.Length);
+                }
+            }
+            return null;
+        }
     }
 }
