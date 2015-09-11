@@ -1,1 +1,1 @@
-node generator.js "test.md" "test.pdf"
+node generator.nodejs "test.md" "test.pdf"
