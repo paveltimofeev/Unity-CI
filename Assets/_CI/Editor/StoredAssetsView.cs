@@ -10,57 +10,75 @@ using System.Collections.Specialized;
 
 namespace Patico.AssetManager
 {
-    class StoredAssetsView : EditorWindow
+    class BaseView : EditorWindow
     {
-        private AssetManager assetManager = new AssetManager();
-        
-        private readonly GUIContent m_GUIRefreshList = new GUIContent("Refresh list", "Refresh list of downloaded assets");
-        private readonly GUIContent m_GUIStoreAssets = new GUIContent("Save .assets", "Store selected assets to .assets list");
-        private readonly GUIContent m_GUIImportAssets = new GUIContent("Import .assets", "Import assets from .assets list");
-        private readonly GUIContent m_GUIInstallSelected = new GUIContent("Install selected", "Install selected packages");
-
-        private string assetsFilePath = string.Empty;
-        private string m_searchFilter = "";
-        private Hashtable publisher_foldout_table = new Hashtable();
-        private IList<StoredAsset> publishers = new List<StoredAsset>();
-        private List<StoredAsset> storedAssets = new List<StoredAsset>();
-        private Vector2 m_Scroll = Vector2.zero;
-        private Group m_Group = Group.GroupByPublisher;
-
-        
-        public void OnEnable()
-        {
-            titleContent = new GUIContent("Assets Manager");
-            assetsFilePath = Path.Combine(Environment.CurrentDirectory, ".assets");
-
-            storedAssets = assetManager.RefreshList();
-        }
-
-        public void OnDestroy()
-        {
-
-        }
-        
-        public void OnGUI()
+        public virtual void OnEnable() { }
+        public virtual void OnDestroy() { }
+        public virtual void OnGUI()
         {
             EditorGUILayout.BeginVertical();
-            
-            DrawToolbar();
 
-            DrawAssetsList(storedAssets);
+            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
+            DrawToolbar();
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginVertical();
+            DrawContent();
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndVertical();
 
             EditorGUILayout.EndVertical();
         }
 
-   
-        private void DrawToolbar()
-        {
-            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
+        protected virtual void DrawToolbar() { }
+        protected virtual void DrawContent() { }
 
+        protected virtual void DrawToolbarButton(GUIContent content, Action action)
+        {
+            if (GUILayout.Button(content, EditorStyles.toolbarButton))
+                action();
+        }
+    }
+
+    class StoredAssetsView : BaseView
+    {
+        AssetManager assetManager = new AssetManager();
+        AssetSource newSource = new AssetSource() { Name = "", Location = "" };
+        AseetsConfig config = null;
+        IList<StoredAsset> publishers = new List<StoredAsset>();
+        List<StoredAsset> storedAssets = new List<StoredAsset>();
+        
+        #region GUI fields
+        private readonly GUIContent m_GUIRefreshList = new GUIContent("Refresh list", "Refresh list of downloaded assets");
+        private readonly GUIContent m_GUIStoreAssets = new GUIContent("Save .assets", "Store selected assets to .assets list");
+        private readonly GUIContent m_GUIImportAssets = new GUIContent("Import .assets", "Import assets from .assets list");
+        private readonly GUIContent m_GUIInstallSelected = new GUIContent("Install selected", "Install selected packages");
+        private Hashtable publisher_foldout_table = new Hashtable();
+        private Vector2 m_Scroll = Vector2.zero;
+        private Group m_Group = Group.GroupByPublisher;
+        #endregion
+
+        private string assetsFilePath = string.Empty;
+        private string m_searchFilter = "";
+
+
+        public override void OnEnable()
+        {
+            titleContent = new GUIContent("Assets Manager");
+            assetsFilePath = Path.Combine(Environment.CurrentDirectory, ".assets");
+
+            config = assetManager.LoadConfig(assetsFilePath);
+            storedAssets = assetManager.GetAssetsList(config);
+        }
+
+        protected override void DrawToolbar()
+        {
             DrawToolbarButton(m_GUIRefreshList, () =>
             {
-                storedAssets = assetManager.RefreshList();
-                publishers = assetManager.CreatePublisherList(storedAssets);
+                config = assetManager.LoadConfig(assetsFilePath);
+                storedAssets = assetManager.GetAssetsList(config);
+                publishers = assetManager.GetPublisherList(config.Dependencies);
 
                 publisher_foldout_table = new Hashtable();
                 foreach (var item in publishers)
@@ -80,34 +98,26 @@ namespace Patico.AssetManager
 
             DrawToolbarButton(m_GUIStoreAssets, () =>
             {
-                var selected = storedAssets.Where(x => x.selected);
-                assetManager.SaveAssets(selected.ToList(), assetsFilePath);
+                var selected = config.Dependencies.Where(x => x.selected);
+                assetManager.SaveConfig(selected.ToList(), assetsFilePath);
             });
 
             DrawToolbarButton(m_GUIImportAssets, () =>
             {
-                IList<StoredAsset> imported = assetManager.LoadAssets(assetsFilePath).Dependencies;
-                assetManager.SelectAssets(storedAssets, imported);
+                IList<StoredAsset> imported = assetManager.LoadConfig(assetsFilePath).Dependencies;
+                assetManager.MarkSelected((List<StoredAsset>)config.Dependencies, imported);
             });
 
             DrawToolbarButton(m_GUIInstallSelected, () =>
             {
-                assetManager.InstallPackages(
-                    storedAssets.Where(x => x.selected).ToList());
+                assetManager.InstallPackages(config.Dependencies.Where(x => x.selected).ToList());
             });
-            
-            EditorGUILayout.EndHorizontal();
         }
 
-        private void DrawToolbarButton(GUIContent content, Action action)
+        protected override void DrawContent()
         {
-            if (GUILayout.Button(content, EditorStyles.toolbarButton))
-                action();
-        }
+            IList<StoredAsset> assets = storedAssets;
 
-        private void DrawAssetsList(IList<StoredAsset> assets)
-        {
-            EditorGUILayout.BeginVertical();
             m_Scroll = EditorGUILayout.BeginScrollView(m_Scroll, GUILayout.ExpandWidth(true), GUILayout.MaxWidth(2000));
 
             if (assets != null)
@@ -118,7 +128,7 @@ namespace Patico.AssetManager
                     {
                         if (publisher_foldout_table.ContainsKey(publisher.publisher))
                         {
-                            bool foldout = EditorGUILayout.Foldout((bool)publisher_foldout_table[publisher.publisher], 
+                            bool foldout = EditorGUILayout.Foldout((bool)publisher_foldout_table[publisher.publisher],
                                 publisher.publisher);
 
                             publisher_foldout_table[publisher.publisher] = foldout;
@@ -159,7 +169,12 @@ namespace Patico.AssetManager
             }
 
             EditorGUILayout.EndScrollView();
-            EditorGUILayout.EndVertical();
+
+            foreach (var item in config.Sources)
+            {
+                DrawAssetSourceRow(item);
+            }
+            DrawAssetSourceRow(newSource, false);
         }
 
         private bool DrawAssetToggle(StoredAsset asset, DrawFlag draw)
@@ -184,6 +199,21 @@ namespace Patico.AssetManager
             return GUILayout.Toggle(asset.selected, sb.ToString());
         }
 
+        private void DrawAssetSourceRow(AssetSource source, bool canBeDeleted = true)
+        {
+            GUILayout.BeginHorizontal();
+
+            if (canBeDeleted)
+                GUILayout.Button(new GUIContent("x",""), EditorStyles.miniButton, GUILayout.Width(16));
+            else
+                GUILayout.Space(26);
+
+            source.Name = GUILayout.TextField(source.Name, GUILayout.Width(100));
+            source.Location = GUILayout.TextField(source.Location);
+
+            GUILayout.EndHorizontal();
+        }
+
 
         private bool IsFiltered(string value)
         {
@@ -206,19 +236,18 @@ namespace Patico.AssetManager
         private const string k_assetsFolderPattern = "Asset Store*";
         private const string k_assetsFilePattern = "*.unitypackage";
 
-        public List<StoredAsset> RefreshList()
+        public List<StoredAsset> GetAssetsList(AseetsConfig config)
         {
             // IF WIN
-            string appdata = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), k_appUnityFolder);
+            //string appdata = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), k_appUnityFolder);
 
-            return RefreshList(appdata);
+            return GetAssetsList(config.DefaultSource);
         }
-
-        public List<StoredAsset> RefreshList(string sourceFolder)
+        public List<StoredAsset> GetAssetsList(AssetSource source)
         {
             List<StoredAsset> storedAssets = new List<StoredAsset>();
 
-            string[] folders = Directory.GetDirectories(sourceFolder, k_assetsFolderPattern);
+            string[] folders = Directory.GetDirectories(source.Location, k_assetsFolderPattern);
 
             foreach (var folder in folders)
             {
@@ -241,33 +270,17 @@ namespace Patico.AssetManager
             return storedAssets;
         }
 
-        public void SaveAssets(IList<StoredAsset> assets, string filePath)
+        public IList<StoredAsset> GetPublisherList(IList<StoredAsset> assets)
         {
-            SaveAssets(new AseetsConfig(){ Dependencies = assets }, filePath);
-        }
-        public void SaveAssets(AseetsConfig config, string filePath)
-        {
-            StringBuilder content = new StringBuilder();
-
-            foreach (AssetSource source in config.Sources)
-            {
-                /// ~MyPackages://C:\Users\Me\MyUnityPackages\
-                content.AppendFormat("~{0}://{1}\r\n", source.Name, source.Location);
-            }
-
-            foreach (StoredAsset asset in config.Dependencies)
-            {
-                /// DefaultUnity://patico/scriptingphysics/CustomGravitationsKit
-                content.AppendFormat("{0}://{1}/{2}/{3}\r\n", asset.Storage, asset.publisher, asset.category, asset.name);
-            }
-
-            File.WriteAllText(filePath, content.ToString());
+            return assets.GroupBy(x => x.publisher).Select(x => x.First()).ToList();
         }
 
-        public AseetsConfig LoadAssets(string filePath)
+        public AseetsConfig LoadConfig(string filePath)
         {
             string[] lines = File.ReadAllLines(filePath);
             AseetsConfig config = new AseetsConfig();
+            config.DefaultSource = new AssetSource() { Name = "Default", Location = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), k_appUnityFolder) };
+
             foreach (string data in lines)
             {
                 char first = data.Length > 0 ? data[0] : '#';
@@ -297,7 +310,29 @@ namespace Patico.AssetManager
 
             return config;
         }
+        public void SaveConfig(IList<StoredAsset> assets, string filePath)
+        {
+            SaveConfig(new AseetsConfig(){ Dependencies = assets }, filePath);
+        }
+        public void SaveConfig(AseetsConfig config, string filePath)
+        {
+            StringBuilder content = new StringBuilder();
 
+            foreach (AssetSource source in config.Sources)
+            {
+                /// ~MyPackages://C:\Users\Me\MyUnityPackages\
+                content.AppendFormat("~{0}://{1}\r\n", source.Name, source.Location);
+            }
+
+            foreach (StoredAsset asset in config.Dependencies)
+            {
+                /// DefaultUnity://patico/scriptingphysics/CustomGravitationsKit
+                content.AppendFormat("{0}://{1}/{2}/{3}\r\n", asset.Storage, asset.publisher, asset.category, asset.name);
+            }
+
+            File.WriteAllText(filePath, content.ToString());
+        }
+       
         public void InstallPackages(IList<StoredAsset> assets)
         {
             if (assets != null)
@@ -308,8 +343,7 @@ namespace Patico.AssetManager
                 }
             }
         }
-
-        public void SelectAssets(List<StoredAsset> storedAssets, IList<StoredAsset> imported)
+        public void MarkSelected(List<StoredAsset> storedAssets, IList<StoredAsset> imported)
         {
             storedAssets.ForEach(a => a.selected = false);
             foreach (var item in imported)
@@ -322,14 +356,10 @@ namespace Patico.AssetManager
 
                     ).selected = true;
             }
-        }
-
-        public IList<StoredAsset> CreatePublisherList(IList<StoredAsset> assets)
-        {
-            return assets.GroupBy(x => x.publisher).Select(x => x.First()).ToList();
-        }        
+        }    
     }
 
+    #region Parsers
     interface IParser
     {
         string[] Parsed { get; }
@@ -368,8 +398,9 @@ namespace Patico.AssetManager
             values.CopyTo(Parsed, 0);
         }
     }
+    #endregion
 
-    // POCOs
+    #region POCOs
     class AseetsConfig
     {
         public IList<AssetSource> Sources { get; set; }
@@ -380,6 +411,8 @@ namespace Patico.AssetManager
             Sources = new List<AssetSource>();
             Dependencies = new List<StoredAsset>();
         }
+
+        public AssetSource DefaultSource { get; set; }
     }
     class AssetSource
     {
@@ -419,6 +452,7 @@ namespace Patico.AssetManager
         version = 8,
         size = 16
     }
+    #endregion
 
     public static class CLI
     {
@@ -440,14 +474,12 @@ namespace Patico.AssetManager
             {
                 case "install":
 
-                    var storedAssets = assetManager.RefreshList();
+                    var config = assetManager.LoadConfig(Path.Combine(Environment.CurrentDirectory, ".assets"));
+                    var storedAssets = assetManager.GetAssetsList(config);
 
-                    assetManager.SelectAssets(
-                        storedAssets,
-                        assetManager.LoadAssets(Path.Combine(Environment.CurrentDirectory, ".assets")).Dependencies);
+                    assetManager.MarkSelected(storedAssets, config.Dependencies);
 
-                    assetManager.InstallPackages(
-                        storedAssets.Where(x => x.selected).ToList());
+                    assetManager.InstallPackages(storedAssets.Where(x => x.selected).ToList());
 
                     break;
                 case "save": break;
