@@ -104,10 +104,10 @@ namespace Patico.AssetManager
 
             DrawToolbarButton(m_GUIStoreAssets, () =>
             {
-                var selected = storedAssets.Where(x => x.selected);
-                l.og(m_GUIStoreAssets.text + " -> Selected {0}", selected.Count());
+                var selected = GetSelectedItems();
+                l.og(m_GUIStoreAssets.text + " -> Selected {0}", selected.Count);
                 
-                assetManager.SaveConfig(selected.ToList(), assetsFilePath);
+                assetManager.SaveConfig(selected, assetsFilePath);
             });
 
             DrawToolbarButton(m_GUIImportAssets, () =>
@@ -120,7 +120,10 @@ namespace Patico.AssetManager
 
             DrawToolbarButton(m_GUIInstallSelected, () =>
             {
-                assetManager.InstallPackages(storedAssets.Where(x => x.selected).ToList());
+                var selected = GetSelectedItems();
+                l.og(m_GUIImportAssets.text + " -> Installing {0}", selected.Count);
+
+                assetManager.InstallPackages(selected);
             });
         }
 
@@ -231,6 +234,11 @@ namespace Patico.AssetManager
                 return true;
 
             return value.ToUpperInvariant().Contains(m_searchFilter.ToUpperInvariant());
+        }
+
+        private IList<StoredAsset> GetSelectedItems()
+        {
+            return storedAssets.Where(x => x.selected).ToList();
         }
 
         [MenuItem("Window/Assets Manager", false, 116)]
