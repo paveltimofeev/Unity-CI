@@ -78,7 +78,13 @@ namespace Patico.AssetManager
             {
                 config = assetManager.LoadConfig(assetsFilePath);
                 storedAssets = assetManager.GetAssetsList(config);
-                publishers = assetManager.GetPublisherList(config.Dependencies);
+                publishers = assetManager.GetPublisherList(storedAssets);
+
+                l.og(m_GUIRefreshList.text + " -> Dependencies {0}", config.Dependencies.Count);
+                l.og(m_GUIRefreshList.text + " -> Default Source {0}", config.DefaultSource.Location);
+                l.og(m_GUIRefreshList.text + " -> Total Sources {0}", config.Sources.Count);
+                l.og(m_GUIRefreshList.text + " -> Total Assets {0}", storedAssets.Count);
+                l.og(m_GUIRefreshList.text + " -> Total Publishers {0}", publishers.Count);
 
                 publisher_foldout_table = new Hashtable();
                 foreach (var item in publishers)
@@ -98,19 +104,23 @@ namespace Patico.AssetManager
 
             DrawToolbarButton(m_GUIStoreAssets, () =>
             {
-                var selected = config.Dependencies.Where(x => x.selected);
+                var selected = storedAssets.Where(x => x.selected);
+                l.og(m_GUIStoreAssets.text + " -> Selected {0}", selected.Count());
+                
                 assetManager.SaveConfig(selected.ToList(), assetsFilePath);
             });
 
             DrawToolbarButton(m_GUIImportAssets, () =>
             {
                 IList<StoredAsset> imported = assetManager.LoadConfig(assetsFilePath).Dependencies;
-                assetManager.MarkSelected((List<StoredAsset>)config.Dependencies, imported);
+                l.og(m_GUIImportAssets.text + " -> Imported {0}", imported.Count);
+
+                assetManager.MarkSelected(storedAssets, imported);
             });
 
             DrawToolbarButton(m_GUIInstallSelected, () =>
             {
-                assetManager.InstallPackages(config.Dependencies.Where(x => x.selected).ToList());
+                assetManager.InstallPackages(storedAssets.Where(x => x.selected).ToList());
             });
         }
 
@@ -267,12 +277,16 @@ namespace Patico.AssetManager
                 }
             }
 
+            l.og("Got Assets List with {0} items", storedAssets.Count);
+
             return storedAssets;
         }
 
         public IList<StoredAsset> GetPublisherList(IList<StoredAsset> assets)
         {
-            return assets.GroupBy(x => x.publisher).Select(x => x.First()).ToList();
+            var result = assets.GroupBy(x => x.publisher).Select(x => x.First()).ToList();
+            l.og("Got Publisher List with {0} items (sorted across {1} assets)", result.Count, assets.Count);
+            return result;
         }
 
         public AseetsConfig LoadConfig(string filePath)
@@ -356,7 +370,7 @@ namespace Patico.AssetManager
 
                     ).selected = true;
             }
-        }    
+        }
     }
 
     #region Parsers
@@ -497,6 +511,14 @@ namespace Patico.AssetManager
                 }
             }
             return null;
+        }
+    }
+
+    public class l
+    {
+        public static void og(string format, params object[] args)
+        {
+            Debug.Log(string.Format(format, args));
         }
     }
 }
