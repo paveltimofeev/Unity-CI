@@ -10,6 +10,8 @@ using System.Collections.Specialized;
 
 namespace Patico.AssetManager
 {
+    // Views 
+
     class BaseView : EditorWindow
     {
         public virtual void OnEnable() { }
@@ -44,7 +46,6 @@ namespace Patico.AssetManager
     class StoredAssetsView : BaseView
     {
         AssetManager assetManager = new AssetManager();
-        AssetSource newSource = new AssetSource() { Name = "", Location = "" };
         AseetsConfig config = null;
         IList<StoredAsset> publishers = new List<StoredAsset>();
         List<StoredAsset> storedAssets = new List<StoredAsset>();
@@ -182,12 +183,6 @@ namespace Patico.AssetManager
             }
 
             EditorGUILayout.EndScrollView();
-
-            foreach (var item in config.Sources)
-            {
-                DrawAssetSourceRow(item);
-            }
-            DrawAssetSourceRow(newSource, false);
         }
 
         private bool DrawAssetToggle(StoredAsset asset, DrawFlag draw)
@@ -212,22 +207,6 @@ namespace Patico.AssetManager
             return GUILayout.Toggle(asset.selected, sb.ToString());
         }
 
-        private void DrawAssetSourceRow(AssetSource source, bool canBeDeleted = true)
-        {
-            GUILayout.BeginHorizontal();
-
-            if (canBeDeleted)
-                GUILayout.Button(new GUIContent("x",""), EditorStyles.miniButton, GUILayout.Width(16));
-            else
-                GUILayout.Space(26);
-
-            source.Name = GUILayout.TextField(source.Name, GUILayout.Width(100));
-            source.Location = GUILayout.TextField(source.Location);
-
-            GUILayout.EndHorizontal();
-        }
-
-
         private bool IsFiltered(string value)
         {
             if (m_searchFilter == "" || m_searchFilter == null)
@@ -247,6 +226,97 @@ namespace Patico.AssetManager
             GetWindow(typeof(StoredAssetsView)).Show();
         }
     }
+
+    class ManageSourcesView : BaseView
+    {
+        AssetManager assetManager = new AssetManager();
+        AseetsConfig config = null;
+        private string assetsFilePath = string.Empty;
+        private string newAssetSource = "";
+        private string[] sources = new string[0];
+
+        private GUIContent m_GUISave = new GUIContent("Save", "");
+
+        public override void OnEnable()
+        {
+            titleContent = new GUIContent("Sources");
+            assetsFilePath = Path.Combine(Environment.CurrentDirectory, ".assets");
+            config = assetManager.LoadConfig(assetsFilePath);
+            sources = new string[config.Sources.Count];
+            
+            for (int i = 0; i < sources.Length; i++)
+            {
+                sources[i] = config.Sources[i].Location;
+            }
+        }
+
+        protected override void DrawToolbar()
+        {
+            DrawToolbarButton(m_GUISave, () =>
+            {
+                config.Sources = new List<AssetSource>();
+                for (int i = 0; i < sources.Length; i++)
+                {
+                    config.Sources.Add(new AssetSource() {
+                        Name = i.ToString(),
+                        Location = sources[i]
+                    });    
+                }
+
+                assetManager.SaveConfig(config, assetsFilePath);
+            });
+        }
+        
+        protected override void DrawContent()
+        {
+            for (int i = 0; i < sources.Length; i++)
+            {
+                DrawItem(sources[i], "x",
+                        (string val) => // change
+                        {
+                            sources[i] = val; 
+                        },
+                        (string val) => // click on 'x'
+                        { 
+                            sources[i] = "~"; // removing
+                        });
+            }
+
+            DrawItem(newAssetSource, "+", 
+                    (string val) => // change
+                    {
+                        newAssetSource = val; 
+                    },
+                    (string val) => // click on '+'
+                    {
+                        Array.Resize(ref sources, sources.Length + 1);
+                        sources[sources.Length-1] = val;
+                        newAssetSource = "";
+                    });
+
+            sources = sources.Where( x => x != "~").ToArray();
+        }
+
+        private void DrawItem(string value, string button,  Action<string> onChange, Action<string> onClick)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Assets Location: ", GUILayout.Width(120));
+            value = GUILayout.TextField(value);
+            if (button != null && GUILayout.Button(button, EditorStyles.miniButton, GUILayout.Width(20)))
+                onClick(value);
+            else
+                onChange(value);
+            GUILayout.EndHorizontal();
+        }
+
+        [MenuItem("Window/Manage Sources", false, 117)]
+        private static void LoadThirdPartyAssets()
+        {
+            GetWindow(typeof(ManageSourcesView)).Show();
+        }
+    }
+
+    // Logic
 
     class AssetManager
     {
@@ -308,14 +378,15 @@ namespace Patico.AssetManager
                 char first = data.Length > 0 ? data[0] : '#';
                 switch (first)
                 {
-                    case '#': break; /// comment line
-                    case '~':
+                    case '#': /// comment line
+                        break;
+                    case '~': /// Assets source declaration
                         IParser parser = new AssetSourceParser();
                         parser.Parse(data);
-                        config.Sources.Add(new AssetSource() { Name = parser.Parsed[0], Location = parser.Parsed[1] });
+                        config.Sources.Add(new AssetSource() { Name = parser.Parsed[1], Location = parser.Parsed[2] });
                         break;
 
-                    default:
+                    default: /// Asset declaration
                         IParser assetparser = new StoredAssetParser();
                         assetparser.Parse(data);
 
@@ -354,15 +425,13 @@ namespace Patico.AssetManager
 
             File.WriteAllText(filePath, content.ToString());
         }
-       
+
         public void InstallPackages(IList<StoredAsset> assets)
         {
-            if (assets != null)
+            foreach (var asset in assets)
             {
-                foreach (var asset in assets)
-                {
-                    AssetDatabase.ImportPackage(asset.path, false);
-                }
+                l.og("Install '{0}'", asset.path);
+                AssetDatabase.ImportPackage(asset.path, false);
             }
         }
         public void MarkSelected(List<StoredAsset> storedAssets, IList<StoredAsset> imported)
@@ -422,6 +491,8 @@ namespace Patico.AssetManager
     }
     #endregion
 
+    // Models
+
     #region POCOs
     class AseetsConfig
     {
@@ -463,7 +534,7 @@ namespace Patico.AssetManager
         }
     }
 
-    enum Group { All, GroupByPublisher, SelectedOnly }
+    enum Group { All, GroupByPublisher, GroupBySource, SelectedOnly }
     
     [Flags]
     enum DrawFlag
@@ -475,6 +546,8 @@ namespace Patico.AssetManager
         size = 16
     }
     #endregion
+
+    // Utils
 
     public static class CLI
     {
